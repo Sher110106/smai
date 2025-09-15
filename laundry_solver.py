@@ -238,40 +238,7 @@ def dfs(start: State, total_loads: int, node_limit: Optional[int] = None, stats:
 # Greedy Best-First Search
 # -------------------------------
 
-def heuristic_remaining_work(s: State, total_loads: int) -> int:
-    """A simple heuristic that estimates remaining work.
-
-    Counts loads not yet in basket plus penalties for items mid-process.
-    This is admissible-ish for guidance but not guaranteed optimal; used
-    purely for greedy best-first per the assignment brief.
-    """
-    in_basket = len(s.B)
-    remaining = total_loads - in_basket
-
-    # Add small penalties to prefer states closer to freeing machines/hands
-    finished_in_washers = sum(1 for x in s.W if x < 0)
-    finished_in_dryers = sum(1 for x in s.D if x < 0)
-    running_machines = sum(1 for x in s.W if x > 0) + sum(1 for x in s.D if x > 0)
-
-    hand_penalty = 0
-    if s.H is not None:
-        stage, _ = s.H
-        if stage == "dirty":
-            hand_penalty = 2
-        elif stage == "washed":
-            hand_penalty = 1
-        elif stage == "dried":
-            hand_penalty = 0
-
-    # Combine components
-    estimate = (
-        remaining
-        + finished_in_washers  # need to be picked
-        + finished_in_dryers   # need to be picked
-        + running_machines     # need a Wait
-        + hand_penalty
-    )
-    return estimate
+# Removed unused simple heuristic
 
 
 # Informed heuristic from Heuristic.md
@@ -327,9 +294,9 @@ def heuristic_informed(s: State, total_loads: int, washers: int, dryers: int) ->
         dry_done_or_beyond.add(H[1])
     need_dry = set(range(1, total_loads + 1)) - dry_done_or_beyond
 
-    waits_wash_batches = math.ceil(len(need_wash) / max(1, washers))
-    waits_dry_batches = math.ceil(len(need_dry) / max(1, dryers))
-    waits_lb = waits_wash_batches + waits_dry_batches
+    # Admissible: only count minimal Waits to finish drying remaining loads.
+    # Drying is the terminal machine stage; washer waits can overlap with dryer waits.
+    waits_lb = math.ceil(len(need_dry) / max(1, dryers))
 
     return person_ops_lb + waits_lb
 
@@ -340,6 +307,7 @@ def greedy_best_first(
     washers: int,
     dryers: int,
     node_limit: Optional[int] = None,
+    stats: Optional[Dict[str, int]] = None,
 ) -> Optional[List[str]]:
     if goal_test(start, total_loads):
         return []
@@ -370,11 +338,15 @@ def greedy_best_first(
             parent[nxt] = current
             action_taken[nxt] = action_label
             if goal_test(nxt, total_loads):
+                if stats is not None:
+                    stats["expansions"] = expansions
                 return reconstruct_path(parent, action_taken, nxt)
             visited.add(nxt)
             counter += 1
             heapq.heappush(heap, (eval_h(nxt), counter, nxt))
 
+    if stats is not None:
+        stats["expansions"] = expansions
     return None
 
 

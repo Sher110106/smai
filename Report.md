@@ -1,7 +1,7 @@
 ## Implementation Report: Laundry-Room Puzzle Solver
 
 ### Overview
-This project implements state-space search for the Laundry-Room Puzzle with BFS, DFS, Greedy Best-First, and A*. The final solver uses a single informed, resource-aware heuristic across Greedy and A*.
+This project implements state-space search for the Laundry-Room Puzzle with BFS, DFS, Greedy Best-First, and A*. The solver uses a single informed, resource-aware heuristic across Greedy and A*.
 
 ### State Representation
 - **State** `State(W, D, Q, H, B)`
@@ -10,8 +10,6 @@ This project implements state-space search for the Laundry-Room Puzzle with BFS,
   - `Q` dirty queue: loads awaiting washing
   - `H` hand: `None` or `(stage, loadId)` where `stage in {'dirty','washed','dried'}`
   - `B` basket: finished loads
-
-This encoding guarantees the strict sequence DIRTY → WASH → DRY → BASKET and avoids illegal states by generating only legal successors.
 
 ### Operators (Move Generation)
 - `TakeDirty` → pick first from `Q` into `H=('dirty',p)`
@@ -28,16 +26,18 @@ All loads are in `B`, `Q` empty, `H=None`, and all machine slots are `0`.
 ### Search Algorithms
 - **BFS**: shortest action sequence; exponential but complete/optimal w.r.t. action cost 1.
 - **DFS**: memory-light, not optimal; included for completeness.
-- **Greedy Best-First (informed)**: uses heuristic to guide; fast but not guaranteed optimal.
-- **A***: uses the same heuristic; optimal with much smaller search than BFS.
+- **Greedy Best-First**: uses the informed heuristic to guide; fast but not guaranteed optimal.
+- **A***: uses the same heuristic; optimal with admissible heuristic.
 
-### Final Heuristic (Single Heuristic Used)
-The solver uses one informed, resource-aware heuristic `heuristic_informed(state, total_loads, washers, dryers)`:
+### Final Heuristic (Single Heuristic Used, Admissible for A*)
+`heuristic_informed(state, total_loads, washers, dryers)`
 - `h(s) = person_ops_lb + waits_lb`
-  - `person_ops_lb`: sum of minimal unavoidable person actions per remaining load based on its stage/location
-  - `waits_lb`: lower bound on unavoidable `Wait()` calls estimated via machine throughput: `ceil(need_wash/washers) + ceil(need_dry/dryers)`
+  - `person_ops_lb`: minimal unavoidable person actions per remaining load based on stage/location.
+  - `waits_lb`: admissible lower bound on `Wait()` calls required to finish drying remaining loads:
+    - `waits_lb = ceil( |need_dry| / dryers )`
+    - Rationale: drying is the terminal machine stage; washer waits can overlap with dryer waits in the pipeline.
 
-This is conservative (lower bound) and thus suitable for A*. It captures both hand-operated actions and machine-parallelism constraints, steering search to unblock machines and maintain pipeline flow.
+This correction ensures admissibility (never overestimates), restoring A*'s optimality guarantee.
 
 ### How to Run
 - Solve with BFS (baseline):
@@ -61,23 +61,22 @@ python laundry_solver.py --loads 1 --washers 1 --dryers 1 --verify --print
 python laundry_solver.py --loads 3 --washers 3 --dryers 3 --benchmark
 ```
 
-### Benchmark Results (Mac, Python 3)
+### Benchmark Results (after heuristic fix)
 Instance: `K=3, washers=3, dryers=3`
 ```
 algo,heuristic,actions,seconds,expansions
-bfs,-,20,0.002228,579
-greedy,informed,20,0.000175,
-astar,informed,20,0.000751,117
+bfs,-,20,0.002180,579
+greedy,informed,20,0.000181,
+astar,informed,20,0.001145,164
 ```
-- **Solution quality**: Greedy found an optimal-length plan (20) on this instance but offers no guarantees. A* guarantees optimality by design.
-- **Performance**: A* with the informed heuristic expanded ~117 nodes vs BFS 579 (≈5x reduction) and is still very fast. Greedy is the fastest but may yield suboptimal solutions on other instances.
+- **Solution quality**: A* remains optimal; Greedy found an optimal-length plan on this instance but has no guarantee.
+- **Performance**: With the admissible `waits_lb`, A* expanded 164 nodes (previously 117 with the non-admissible count) versus BFS 579; it is still significantly more efficient than BFS and remains fast. Greedy is fastest in wall time but approximate.
 
-### Discussion and Trade-offs
-- The informed heuristic substantially shrinks the explored space versus uninformed BFS by aligning with unavoidable work (person ops + machine batches).
-- Greedy is a pragmatic choice for large K when an approximate but often-good plan suffices.
-- A* is the recommended default when optimality matters; it scales better than BFS due to the heuristic’s guidance.
+### Cleanups
+- Added expansion stats to Greedy for consistent reporting.
+- Removed unused simple heuristic and unreachable code in `heuristic_informed`.
 
 ### Potential Improvements
-- Add optional verbose tracing of states along the returned plan to illuminate operator choices.
-- Extend benchmarking to larger `K` and varied machine counts; log nodes expanded and peak frontier size.
-- Explore slight tie-breakers in greedy/A* (e.g., prefer more items in `B`) to reduce wall time further while maintaining admissibility for A*.
+- Optional verbose tracing of states along returned plans.
+- Larger-scale benchmarks; record frontier sizes and memory.
+- Tie-breakers in Greedy/A* (that preserve admissibility for A*).
