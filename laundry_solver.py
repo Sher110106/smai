@@ -9,9 +9,6 @@ import sys
 import math
 import time
 
-# -------------------------------
-# Domain model (from Task.md)
-# -------------------------------
 
 Stage = str  # 'dirty' | 'washed' | 'dried'
 Hand = Optional[Tuple[Stage, int]]  # None or (stage, load-id)
