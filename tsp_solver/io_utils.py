@@ -18,12 +18,18 @@ def smart_open(path: str, mode: str = 'r'):
     Returns:
         file handle
     """
-    encodings = ["utf-8", "utf-8-sig", "utf-16", "utf-16le", "utf-16be", "latin-1"]
+    encodings = ["utf-8", "utf-8-sig", "utf-16le", "utf-16be", "utf-16", "latin-1"]
     
     for encoding in encodings:
         try:
-            return open(path, mode, encoding=encoding)
-        except UnicodeDecodeError:
+            f = open(path, mode, encoding=encoding)
+            # Test read a small amount to verify encoding works
+            if mode == "r":
+                pos = f.tell()
+                f.read(100)
+                f.seek(pos)
+            return f
+        except (UnicodeDecodeError, UnicodeError):
             continue
     
     raise UnicodeDecodeError("Unsupported encoding", b"", 0, 1, "Could not decode file with any supported encoding")
@@ -42,8 +48,11 @@ def parse_input(filename: str) -> Tuple[str, int, np.ndarray]:
     with smart_open(filename) as f:
         lines = f.readlines()
     
-    # Parse problem type
+    # Parse problem type (strip BOM and whitespace)
     problem_type = lines[0].strip()
+    # Remove BOM if present
+    if problem_type.startswith('\ufeff'):
+        problem_type = problem_type[1:]
     if problem_type not in ['EUCLIDEAN', 'NON-EUCLIDEAN']:
         raise ValueError(f"Invalid problem type: {problem_type}")
     
